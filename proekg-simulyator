@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Interaktiv EKG Simulyatori (Fiziologiya + Izohlar)</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 10px; background-color: #f0fdf4; }
+        .grid-bg { 
+            background-color: #fff1f2; 
+            background-image: 
+                linear-gradient(rgba(255,100,100,0.4) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,100,100,0.4) 1px, transparent 1px),
+                linear-gradient(rgba(255,100,100,0.15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,100,100,0.15) 1px, transparent 1px);
+            background-size: 25px 25px, 25px 25px, 5px 5px, 5px 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const kategoriyaList = [
+            { id: 'norma_kat', name: 'Norma (Sog\'lom)' },
+            { id: 'stenokardiya', name: 'Stenokardiya (IYK)' },
+            { id: 'infarkt', name: 'Miokard Infarkti' }
+        ];
+
+        const stenokardiyaTurlari = [
+            { id: 'stabil', name: 'Stabil stenokardiya xuruji' },
+            { id: 'prinsmetal', name: 'Prinsmetal (Vazospastik)' },
+            { id: 'unstabil', name: 'Nostabil stenokardiya' }
+        ];
+
+        const infarktJoylashuvi = [
+            { id: 'anterior', name: 'Oldi devor (Anterior)' },
+            { id: 'inferior', name: 'Pastki devor (Inferior)' },
+            { id: 'lateral', name: 'Yon devor (Lateral)' },
+            { id: 'posterior', name: 'Orqa devor (Posterior)' }
+        ];
+
+        const davrlar = [
+            { id: 'ishemiya', name: 'Ishemiya' },
+            { id: 'shikastlanish', name: 'Shikastlanish' },
+            { id: 'nekroz', name: 'O\'tkir (Nekroz)' },
+            { id: 'chandiq', name: 'Chandiqlanish' }
+        ];
+
+        const tarmoqlar = ['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9'];
+
+        function App() {
+            const [kategoriya, setKategoriya] = useState('norma_kat');
+            const [stenoTur, setStenoTur] = useState('stabil');
+            const [tur, setTur] = useState('anterior'); 
+            const [davr, setDavr] = useState('shikastlanish');
+            const [tarmoq, setTarmoq] = useState('II');
+            const canvasRef = useRef(null);
+
+            const getBaseMorphology = (t) => {
+                switch(t) {
+                    case 'I': return { p: 4, q: 2, r: 25, s: 6, t: 8 };
+                    case 'II': return { p: 6, q: 2, r: 35, s: 6, t: 12 };
+                    case 'III': return { p: 3, q: 4, r: 15, s: 10, t: 4 };
+                    case 'aVR': return { p: -5, q: 30, r: 4, s: 5, t: -8 };
+                    case 'aVL': return { p: 2, q: 3, r: 15, s: 8, t: 3 };
+                    case 'aVF': return { p: 5, q: 2, r: 25, s: 4, t: 8 };
+                    case 'V1': return { p: 2, q: 0, r: 5, s: 35, t: 2 };
+                    case 'V2': return { p: 3, q: 0, r: 12, s: 35, t: 8 };
+                    case 'V3': return { p: 4, q: 0, r: 25, s: 20, t: 12 };
+                    case 'V4': return { p: 5, q: 2, r: 35, s: 10, t: 15 };
+                    case 'V5': return { p: 5, q: 3, r: 30, s: 5, t: 12 };
+                    case 'V6': return { p: 4, q: 2, r: 20, s: 2, t: 8 };
+                    case 'V7': case 'V8': case 'V9': return { p: 2, q: 2, r: 10, s: 4, t: 4 };
+                    default: return { p: 4, q: 2, r: 20, s: 10, t: 8 };
+                }
+            };
+
+            const getLeadType = (t, currentTur) => {
+                if (kategoriya === 'norma_kat') return 'neutral';
+                let targetTur = kategoriya === 'infarkt' ? currentTur : 'anterior'; 
+
+                if (targetTur === 'anterior' && ['V1','V2','V3','V4','V5'].includes(t)) return 'direct';
+                if (targetTur === 'anterior' && ['II','III','aVF'].includes(t)) return 'reciprocal';
+                
+                if (targetTur === 'inferior' && ['II','III','aVF'].includes(t)) return 'direct';
+                if (targetTur === 'inferior' && ['I','aVL'].includes(t)) return 'reciprocal';
+                
+                if (targetTur === 'lateral' && ['I','aVL','V5','V6'].includes(t)) return 'direct';
+                if (targetTur === 'lateral' && ['II','III','aVF'].includes(t)) return 'reciprocal';
+                
+                if (targetTur === 'posterior') {
+                    if (['V1','V2','V3'].includes(t)) return 'reciprocal'; 
+                    if (['V7','V8','V9'].includes(t)) return 'direct'; 
+                }
+                
+                return 'neutral';
+            };
+
+            // DIAGNOSTIK IZOHLAR FUNKSIYASI (QAYTA TIKLANDI)
+            const getKlinikIzoh = () => {
+                if (tarmoq === 'aVR') return "aVR - o'ng qo'ldan yozuvchi tarmoq. Anatomik jihatdan barcha vektorlar undan uzoqlashgani uchun P, QRS, T to'lqinlari doimo manfiy (pastga) qaraydi. Bu mutlaq norma.";
+                
+                if (kategoriya === 'norma_kat') {
+                    if (['V1','V2'].includes(tarmoq)) return `${tarmoq} da rS kompleksi bo'lishi norma: R tish kichkina, S tish chuqur bo'ladi. Yurak o'ng bo'lmacha ustidan yozmoqda.`;
+                    if (['V3','V4'].includes(tarmoq)) return `${tarmoq} tarmog'i o'tish zonasidir. Bu yerda R tishi va S tishi balandligi tenglashadi (R = S).`;
+                    if (['V5','V6'].includes(tarmoq)) return `${tarmoq} da qR yoki R kompleksi bo'ladi. Chap qorincha qalinligi hisobiga R tish maksimal balandlikka chiqadi.`;
+                    if (['II'].includes(tarmoq)) return `II standart tarmoq - yurak elektr o'qiga eng to'g'ri tushuvchi tarmoq. Barcha tishlar eng yaqqol va baland shu yerda ko'rinadi.`;
+                    if (['V7','V8','V9'].includes(tarmoq)) return `Orqa (Posterior) tarmoqlar. Elektrodlar kurak sohasiga qo'yilgani uchun uzoqlik hisobiga tishlarning voltaji ancha past (kichkina) bo'ladi.`;
+                    return "Yurak ishi normal. Tishlar amplitudasi ushbu tarmoqning anatomik joylashuviga mos ravishda to'g'ri shakllangan.";
+                }
+
+                let lType = getLeadType(tarmoq, tur);
+                
+                if (kategoriya === 'stenokardiya') {
+                    if (lType !== 'direct') return "Ushbu tarmoqda stenokardiya belgilari yaqqol kuzatilmayapti. O'zgarishlar ishemiyaga uchragan hududda ko'rinadi.";
+                    if (stenoTur === 'stabil') return "Stabil stenokardiya: Kardiomiotsitlar o'lmagan, lekin kislorod yetishmayapti (subendokardial ishemiya). EKGda ST depressiyasi va T tishi inversiyasi xuruj vaqtida yuzaga chiqadi.";
+                    if (stenoTur === 'prinsmetal') return "Prinsmetal (Vazospastik): Yirik koronar tomir spazmga uchradi. Natijada transmural ishemiya sababli vaqtinchalik ST ko'tarilishi (elevatsiya) paydo bo'ldi. Spazm tugasa, u normal holatga qaytadi.";
+                    if (stenoTur === 'unstabil') return "Nostabil stenokardiya: Tomirda qisman tromboz bor. EKGda chuqur ST depressiyasi va katta manfiy T tishlari. Bu holat tezda infarktga aylanib ketish xavfini tug'diradi.";
+                }
+
+                if (kategoriya === 'infarkt') {
+                    if (lType === 'neutral') return `Bu tarmoqda ${infarktJoylashuvi.find(i=>i.id===tur).name} infarktining belgilari yaqqol ko'rinmaydi. Yurakning bu qismi nisbatan sog'lom.`;
+                    
+                    let izoh = `${tarmoq} tarmog'ida (${lType === 'direct' ? "o'choq ustidagi To'g'ridan-to'g'ri" : "oynasimon Retsiprok"}) o'zgarish: `;
+                    
+                    if (tur === 'posterior' && lType === 'reciprocal') {
+                        if (davr === 'ishemiya') return izoh + "Baland, o'tkir musbat T tishi (orqa devordagi ishemiyaning teskari aksi).";
+                        if (davr === 'shikastlanish') return izoh + "Chuqur ST depressiyasi. Bu orqa devorda haqiqiy ST elevatsiya (Pardee to'lqini) borligidan dalolat. V7-V9 tekshirilishi shart!";
+                        if (davr === 'nekroz') return izoh + "Nekrozning orqadagi Q tishi bu yerda juda baland, keng va patologik R tish kabi aks etadi (R balandligi S dan katta bo'lib ketadi).";
+                        if (davr === 'chandiq') return izoh + "Baland R tish doimiy saqlanib qoladi, ST izoliniyada. T tish musbat qoladi.";
+                    }
+
+                    if (tur === 'posterior' && lType === 'direct') {
+                        if (davr === 'ishemiya') return izoh + "Baland simmetrik T tishi (subendokardial ishemiya qismi).";
+                        if (davr === 'shikastlanish') return izoh + "Haqiqiy ST elevatsiyasi. Voltaj past bo'lgani uchun bu yerda hatto 0.5mm ko'tarilish ham infarkt deb baholanadi!";
+                        if (davr === 'nekroz') return izoh + "Patologik Q tishi paydo bo'ldi. R tish pasaygan, ST to'lqini pasayishni boshladi.";
+                        if (davr === 'chandiq') return izoh + "Chandiq to'qimasi qoldi (fibroz). ST o'rniga tushgan, Q tish saqlanadi.";
+                    }
+
+                    if (lType === 'direct' && tur !== 'posterior') {
+                        if (davr === 'ishemiya') return izoh + "Koronar, o'tkirlashgan, baland simmetrik T tishi.";
+                        if (davr === 'shikastlanish') return izoh + "Gumbazsimon ST elevatsiyasi (Monofazik egrilik). Miokard qattiq shikastlangan, lekin hujayralar hali o'lmagan.";
+                        if (davr === 'nekroz') return izoh + "Chuqur patologik Q tishi shakllandi (hujayralar o'ldi). R tishning balandligi pasaydi (yoki yo'qoldi). ST pasayishni boshlagan.";
+                        if (davr === 'chandiq') return izoh + "Infarkt o'chog'i to'liq chandiqqa aylandi. EKGda chuqur QS kompleksi (R tishi yo'q). T tishi izoliniyaga qaytgan.";
+                    } else if (lType === 'reciprocal' && tur !== 'posterior') {
+                        if (davr === 'ishemiya') return izoh + "Asosiy devordagi baland T tishiga javoban biroz manfiylashgan (inversiya) T tishi.";
+                        if (davr === 'shikastlanish') return izoh + "Asosiy o'choqdagi ST ko'tarilishiga javoban diskordant (oynasimon) ST depressiyasi.";
+                        if (davr === 'nekroz') return izoh + "ST depressiyasi saqlangan, T tishi qisman musbatlashgan.";
+                        if (davr === 'chandiq') return izoh + "Yurakning qarama-qarshi tomonidagi chandiq sababli, bu yerda R tish biroz balandroq saqlanib qolishi mumkin.";
+                    }
+                }
+                return "Ma'lumot mavjud emas.";
+            };
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                let animationId;
+                let offset = 0;
+
+                const draw = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 2.5;
+
+                    for(let x=0; x<canvas.width; x++) {
+                        let t_mod = (x + offset) % 200;
+                        let y = canvas.height / 2;
+
+                        let base = getBaseMorphology(tarmoq);
+                        let { p, q, r, s, t: t_amp } = base;
+                        let st = 0; 
+                        
+                        let lType = getLeadType(tarmoq, tur);
+                        let isPosteriorExtra = ['V7','V8','V9'].includes(tarmoq);
+                        
+                        if (kategoriya === 'stenokardiya' && lType === 'direct') {
+                            if (stenoTur === 'stabil') { st = -10; t_amp = (t_amp > 0 ? -t_amp : t_amp); } 
+                            if (stenoTur === 'prinsmetal') { st = 20; t_amp = 25; } 
+                            if (stenoTur === 'unstabil') { st = -15; t_amp = -20; } 
+                        }
+
+                        if (kategoriya === 'infarkt' && davr !== 'norma_kat' && lType !== 'neutral') {
+                            if (lType === 'direct') {
+                                if (tur === 'posterior' && isPosteriorExtra) {
+                                    if (davr === 'ishemiya') { t_amp = 20; }
+                                    if (davr === 'shikastlanish') { st = 15; t_amp = 10; } 
+                                    if (davr === 'nekroz') { q = 25; r = 5; st = 10; t_amp = -10; } 
+                                    if (davr === 'chandiq') { q = 30; r = 0; st = 0; t_amp = 5; s = 0; }
+                                } else {
+                                    if (davr === 'ishemiya') { t_amp = Math.max(t_amp + 15, 25); } 
+                                    if (davr === 'shikastlanish') { st = 25; t_amp = -10; } 
+                                    if (davr === 'nekroz') { q = 35; r = r * 0.1; s = 0; st = 10; t_amp = -15; }
+                                    if (davr === 'chandiq') { q = Math.max(r+s+10, 35); r = 0; s = 0; st = 0; t_amp = (t_amp > 0 ? t_amp/2 : 4); } 
+                                }
+                            } else if (lType === 'reciprocal') {
+                                if (tur === 'posterior') {
+                                    if (davr === 'ishemiya') { t_amp = -15; }
+                                    if (davr === 'shikastlanish') { st = -20; r = 25; s = 5; t_amp = -10; } 
+                                    if (davr === 'nekroz') { st = -10; r = 35; s = 0; t_amp = 20; } 
+                                    if (davr === 'chandiq') { r = 35; s = 0; st = 0; t_amp = 10; } 
+                                } else {
+                                    if (davr === 'ishemiya') { t_amp = -10; }
+                                    if (davr === 'shikastlanish') { st = -20; t_amp = 10; }
+                                    if (davr === 'nekroz') { st = -10; t_amp = 15; }
+                                }
+                            }
+                        }
+
+                        if (t_mod > 20 && t_mod < 40) y -= p * Math.exp(-Math.pow(t_mod-30, 2)/30);
+                        if (t_mod > 60 && t_mod < 70) y += q * Math.exp(-Math.pow(t_mod-65, 2)/10);
+                        if (t_mod >= 70 && t_mod < 85) y -= r * Math.exp(-Math.pow(t_mod-77, 2)/20);
+                        if (t_mod >= 85 && t_mod < 100) y += s * Math.exp(-Math.pow(t_mod-92, 2)/20);
+                        if (t_mod >= 100 && t_mod < 130) y -= st; 
+                        
+                        if (t_mod >= 130 && t_mod < 170) { 
+                            let t_val = t_amp * Math.exp(-Math.pow(t_mod-150, 2)/150);
+                            y -= (st * (1 - (t_mod-130)/40) + t_val); 
+                        }
+
+                        if (x === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                    offset += 1.3; 
+                    animationId = requestAnimationFrame(draw);
+                };
+                draw();
+                return () => cancelAnimationFrame(animationId);
+            }, [kategoriya, stenoTur, tur, davr, tarmoq]);
+
+            return (
+                <div className="w-full max-w-4xl mx-auto bg-white p-4 rounded-xl shadow-xl border border-gray-100">
+                    <h1 className="text-xl md:text-2xl font-bold text-center text-slate-800 mb-2">Interaktiv EKG Simulyatori (Fiziologiya + Izohlar)</h1>
+                    <p className="text-center text-xs text-gray-500 mb-4">* Har bir tarmoqning anatomik amplitudasi inobatga olingan</p>
+                    
+                    <div className="mb-4 relative rounded-xl overflow-hidden border-2 border-gray-300 shadow-inner p-1">
+                        <canvas ref={canvasRef} width="950" height="240" className="w-full h-48 grid-bg rounded-lg"></canvas>
+                        <div className="absolute top-2 left-2 flex gap-2">
+                            <span className="bg-white/95 px-3 py-1 rounded-md text-sm font-bold shadow border text-gray-800">
+                                {tarmoq} tarmog'i
+                            </span>
+                            {tarmoq === 'aVR' && (
+                                <span className="bg-purple-100 px-3 py-1 rounded-md text-xs font-semibold border border-purple-300 text-purple-700">
+                                    Fiziologik Inversiya
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap justify-center gap-2 mb-4">
+                        {kategoriyaList.map(k => (
+                            <button key={k.id} 
+                                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${kategoriya===k.id ? 'bg-green-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                onClick={()=>{setKategoriya(k.id); if(k.id==='norma_kat') setTarmoq('II');}}>
+                                {k.name}
+                            </button>
+                        ))}
+                    </div>
+
+                    {kategoriya === 'stenokardiya' && (
+                        <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200 mb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                {stenokardiyaTurlari.map(s => (
+                                    <button key={s.id} onClick={()=>setStenoTur(s.id)}
+                                        className={`p-2 rounded text-sm font-medium transition ${stenoTur===s.id ? 'bg-yellow-500 text-white shadow-md' : 'bg-white text-gray-700 border'}`}>
+                                        {s.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {kategoriya === 'infarkt' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div className="bg-red-50 p-3 rounded-lg border border-red-100">
+                                <label className="block text-sm font-bold text-red-800 mb-2">Infarkt lokalizatsiyasi:</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {infarktJoylashuvi.map(i => (
+                                        <button key={i.id} onClick={()=>{setTur(i.id); if(i.id==='posterior') setTarmoq('V8'); else setTarmoq('V2');}}
+                                            className={`p-2 rounded text-xs md:text-sm font-medium transition ${tur===i.id ? 'bg-red-600 text-white shadow-md' : 'bg-white text-gray-700 border'}`}>
+                                            {i.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                <label className="block text-sm font-bold text-blue-800 mb-2">Infarkt bosqichi:</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {davrlar.map(d => (
+                                        <button key={d.id} onClick={()=>setDavr(d.id)}
+                                            className={`p-2 rounded text-xs md:text-sm font-medium transition ${davr===d.id ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-700 border'}`}>
+                                            {d.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        <div className="grid grid-cols-5 md:grid-cols-8 gap-2">
+                            {tarmoqlar.map(t => {
+                                let lType = getLeadType(t, tur);
+                                let btnStyle = "p-2 rounded font-bold text-xs md:text-sm border-b-4 transition-all duration-200 ";
+                                
+                                if (tarmoq === t) {
+                                    btnStyle += "bg-slate-700 text-white border-slate-900 transform scale-105 shadow-md ";
+                                } else {
+                                    if (kategoriya !== 'norma_kat') {
+                                        if (lType === 'direct') btnStyle += "bg-red-100 text-red-800 border-red-300 hover:bg-red-200 ";
+                                        else if (lType === 'reciprocal') btnStyle += "bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200 ";
+                                        else btnStyle += "bg-white text-gray-400 border-gray-200 hover:bg-gray-100 ";
+                                    } else {
+                                        btnStyle += "bg-white text-gray-600 border-gray-200 hover:bg-gray-100 ";
+                                    }
+                                }
+
+                                return (
+                                    <button key={t} className={btnStyle} onClick={()=>setTarmoq(t)}>{t}</button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* QAYTA TIKLANGAN DIAGNOSTIK IZOH PANELI */}
+                    <div className="mt-4 flex gap-3 p-4 bg-indigo-50 border-l-4 border-indigo-500 rounded-r-lg shadow-sm">
+                        <div className="mt-1">
+                            <svg className="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </div>
+                        <div>
+                            <h3 className="text-indigo-900 font-bold mb-1">Diagnostik izoh:</h3>
+                            <p className="text-sm text-indigo-800 font-medium leading-relaxed">
+                                {getKlinikIzoh()}
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
